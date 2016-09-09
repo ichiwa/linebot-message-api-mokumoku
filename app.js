@@ -23,17 +23,16 @@ router.get('/linebot/callback', function (req, res) {
 });
 
 var Sequelize = require('sequelize');
-var Restaurant = new Sequelize(
+var LineBotDB = new Sequelize(
   config.sequelize.database, 
   config.sequelize.username, 
   config.sequelize.password,{ logging: console.log }
 );
 
-var restaurants = Restaurant.define('restaurants', 
+var message_categories = LineBotDB.define('message_categories', 
   {
-    id    : {type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true},
-    name  : {type: Sequelize.STRING,  allowNull:false},
-    url   : {type: Sequelize.STRING,  allowNull:false},
+    id : {type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true},
+    keyword : {type: Sequelize.STRING,  allowNull: false},
   },
   {
     underscored: true,
@@ -43,7 +42,22 @@ var restaurants = Restaurant.define('restaurants',
   }
 );
 
-Restaurant.sync();
+var messages = LineBotDB.define('messages', 
+  {
+    id : {type: Sequelize.INTEGER, primaryKey: true, autoIncrement: true},
+    category_id : {type: Sequelize.INTEGER, allowNull: false},
+    text : {type: Sequelize.STRING,  allowNull: false},
+    addition :  {type: Sequelize.TEXT},
+  }, 
+  {
+    underscored: true,
+    charset: 'utf8',
+    timestamps: true,
+    paranoid: true
+  }
+);
+
+LineBotDB.sync();
 
 class LineBot {
   constructor(body) {
@@ -53,11 +67,11 @@ class LineBot {
       'X-Line-ChannelSecret' : config.line.channel_secret,
       'X-Line-Trusted-User-With-ACL' : config.line.mid
     };
-    this.from = body['result'][0]['content']['from']
-    this.text = body['result'][0]['content']['text'];
+    this.from = body['result'][0]['content']['from'];
+    this.text = body['result'][0]['content']['text'].replace(/\(.*?\)/, '').replace(config.replace_word, '');
   }
-  is_restaurant() {
-    return this.text.match(/何食べる？/);
+  get_text() {
+    return this.text;
   }
   generate_data(text) {
     this.data = {
@@ -74,10 +88,6 @@ class LineBot {
         ]
       }
     }
-    return this;
-  }
-  generate_restaurant_data(item) {
-    this.generate_data(item.name + "\n" + item.url)
     return this;
   }
   request(callback) {
@@ -103,13 +113,15 @@ router.post('/linebot/callback', function (req, res) {
     }
   };
   const linebot = new LineBot(body);
-  if (linebot.is_restaurant()) {
-    restaurants.find({order: [ Sequelize.fn( 'RAND' ) ]}).done(function(item){
-      linebot.generate_restaurant_data(item).request(linebot_end);
-    })
-  } else {
-    linebot.generate_data("ふむふむ").request(linebot_end);
-  }
+  message_categories.find({where: { keyword : { $like : '%' + linebot.get_text() + '%' } } }).done(function(category){
+    let category_id = config.default_category_id;
+    if (category) {
+      category_id = category.id;
+    }
+    messages.find({where: { category_id: category_id }, order: [ Sequelize.fn( 'RAND' ) ]}).done(function(message){
+      linebot.generate_data(message.text).request(linebot_end);
+    });
+  });
 });
 
 server.listen(config.port, process.env.IP || "0.0.0.0", function(){
