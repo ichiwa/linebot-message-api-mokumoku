@@ -39,13 +39,7 @@ var restaurants = Restaurant.define('restaurants',
     underscored: true,
     charset: 'utf8',
     timestamps: true,
-    paranoid: true,
-    classMethods: {
-      get_random: function(callback){
-        var sql = "SELECT * FROM restaurants GROUP BY id ORDER BY RAND()";
-        Restaurant.query(sql, this).done(callback);
-      }
-    }
+    paranoid: true
   }
 );
 
