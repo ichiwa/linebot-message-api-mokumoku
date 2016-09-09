@@ -52,18 +52,22 @@ var restaurants = Restaurant.define('restaurants',
 Restaurant.sync();
 
 class LineBot {
-  constructor() {
+  constructor(body) {
     this.headers = {
       'Content-Type' : 'application/json; charset=UTF-8',
       'X-Line-ChannelID' : config.line.channel_id,
       'X-Line-ChannelSecret' : config.line.channel_secret,
       'X-Line-Trusted-User-With-ACL' : config.line.mid
     };
+    this.from = body['result'][0]['content']['from']
+    this.text = body['result'][0]['content']['text'];
   }
-  generete_data(body, item) {
-    const from = body['result'][0]['content']['from']
+  is_restaurant() {
+    return this.text.match(/何食べる？/);
+  }
+  generate_data(text) {
     this.data = {
-      'to': [ from ],
+      'to': [ this.from ],
       'toChannel': 1383378250,
       'eventType':'140177271400161403',
       "content": {
@@ -71,21 +75,25 @@ class LineBot {
         "messages": [
           {
             "contentType": 1,
-            "text": item.name + "\n" + item.url,
+            "text": text
           }
         ]
       }
     }
     return this;
   }
-  generate_request() {
+  generate_restaurant_data(item) {
+    this.generate_data(item.name + "\n" + item.url)
+    return this;
+  }
+  request(callback) {
     const options = {
       url: 'https://trialbot-api.line.me/v1/events',
       headers: this.headers,
       json: true,
       body: this.data
     };
-    return options;
+    request.post(options, callback);
   }
 }
 
@@ -93,17 +101,21 @@ router.post('/linebot/callback', function (req, res) {
   res.send('ok');
 
   const body = req.body;
-  restaurants.find({order: [ Sequelize.fn( 'RAND' ) ]}).done(function(item){
-    console.log(item)
-    const bot_request = new LineBot().generete_data(body, item).generate_request();
-    request.post(bot_request, function(error, response, body) {
-      if (!error && response.statusCode == 200) {
-        console.log(body);
-      } else {
-        console.log('error: '+ JSON.stringify(response));
-      }
-    });
-  });
+  var linebot_end = function(error, response, body) {
+    if (!error && response.statusCode == 200) {
+      console.log(body);
+    } else {
+      console.log('error: '+ JSON.stringify(response));
+    }
+  };
+  const linebot = new LineBot(body);
+  if (linebot.is_restaurant()) {
+    restaurants.find({order: [ Sequelize.fn( 'RAND' ) ]}).done(function(item){
+      linebot.generate_restaurant_data(item).request(linebot_end);
+    })
+  } else {
+    linebot.generate_data("ふむふむ").request(linebot_end);
+  }
 });
 
 server.listen(3036, process.env.IP || "0.0.0.0", function(){
