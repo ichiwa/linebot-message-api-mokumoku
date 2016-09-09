@@ -118,6 +118,6 @@ router.post('/linebot/callback', function (req, res) {
   }
 });
 
-server.listen(3036, process.env.IP || "0.0.0.0", function(){
+server.listen(config.port, process.env.IP || "0.0.0.0", function(){
   console.log("server listen")
 });
